@@ -77,8 +77,6 @@ MqttClient::MqttClient(const Configuration& configuration)
     mosquitto_unsubscribe_callback_set(m_mosq, on_unsubscribe_wrapper);
     mosquitto_log_callback_set(m_mosq, on_log_wrapper);
 
-    m_sleepMutex.lock();
-
     // TODO: check return value
     mosquitto_lib_init();                                             // Initialize libmosquitto
 
@@ -115,8 +113,6 @@ void MqttClient::run()
                 if (spdlog::get("mqtt")) { spdlog::get("mqtt")->info("MQTT client error: {} Trying to reconnect.", errorCodeToString(result)); }
                 mosquitto_reconnect(m_mosq);
             }
-
-            m_sleepMutex.try_lock_for(m_keepalive / 2);
         }
     });
 }
@@ -124,12 +120,21 @@ void MqttClient::run()
 void MqttClient::stop()
 {
     m_running = false;
-    m_sleepMutex.unlock();
 }
 
 void MqttClient::join()
 {
     m_thread.join();
+}
+
+int MqttClient::subscribe(const std::string& subscription_pattern, int qos, MessageCallback callback)
+{
+    return subscribe(nullptr, subscription_pattern, qos, callback);
+}
+
+int MqttClient::unsubscribe(const std::string& subscription_pattern)
+{
+    return unsubscribe(nullptr, subscription_pattern);
 }
 
 void MqttClient::onConnect(int rc)
@@ -142,22 +147,32 @@ void MqttClient::onDisconnect(int rc)
     if (spdlog::get("mqtt")) { spdlog::get("mqtt")->warn("MQTT client disconnected with result: {}", errorCodeToString(rc)); }
 }
 
-void MqttClient::onPublish(int mid)
+void MqttClient::onPublish(int /*mid*/)
 {
 
 }
 
 void MqttClient::onMessage(const struct mosquitto_message *message)
 {
+    // find callback configuration for the given topic and call the corresponding callback
+    const auto it = std::find_if(m_messageCallbacks.begin(), m_messageCallbacks.end(), [&message](const MessageCallbackConfiguration& messageCallback){
+        bool matches;
+        const auto result = mosquitto_topic_matches_sub(message->topic, messageCallback.pattern.c_str(), &matches);
+        return result == MOSQ_ERR_SUCCESS && matches;
+    });
 
+    if (it != m_messageCallbacks.end())
+    {
+        it->callback(std::string(message->topic), std::string(static_cast<char*>(message->payload), static_cast<size_t>(message->payloadlen)));
+    }
 }
 
-void MqttClient::onSubscribe(int mid, int qos_count, const int *granted_qos)
+void MqttClient::onSubscribe(int /*mid*/, int /*qos_count*/, const int */*granted_qos*/)
 {
 
 }
 
-void MqttClient::onUnsubscribe(int mid)
+void MqttClient::onUnsubscribe(int /*mid*/)
 {
 
 }
@@ -192,6 +207,33 @@ int MqttClient::publish(int *mid, const std::string& topic, const std::string& p
     return mosquitto_publish(m_mosq, mid, topic.c_str(),
                              static_cast<int>(payload.length()), payload.c_str(),
                              qos, retain);
+}
+
+int MqttClient::subscribe(int *mid, const std::string& subscription_pattern, int qos, MessageCallback callback)
+{
+    const auto subscribe_result = mosquitto_subscribe(m_mosq, mid, subscription_pattern.c_str(), qos);
+    if (subscribe_result == MOSQ_ERR_SUCCESS)
+    {
+        // add callback configuration to the callbacks vector
+        m_messageCallbacks.emplace_back(subscription_pattern, callback);
+    }
+
+    return subscribe_result;
+}
+
+int MqttClient::unsubscribe(int *mid, const std::string& subscription_pattern)
+{
+    const auto unsubscribe_result = mosquitto_unsubscribe(m_mosq, mid, subscription_pattern.c_str());
+    if (unsubscribe_result == MOSQ_ERR_SUCCESS)
+    {
+        // find callback configuration for given pattern and remove it from the callbacks vector
+        const auto it = std::find_if(m_messageCallbacks.begin(), m_messageCallbacks.end(), [&subscription_pattern](const MessageCallbackConfiguration& messageCallback){
+            return messageCallback.pattern == subscription_pattern;
+        });
+        if (it != m_messageCallbacks.end()) { m_messageCallbacks.erase(it); }
+    }
+
+    return unsubscribe_result;
 }
 
 const char* MqttClient::errorCodeToString(int error)

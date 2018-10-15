@@ -25,6 +25,7 @@
 #include <mutex>
 #include <string>
 #include <sstream>
+#include <vector>
 
 class MqttClient {
 public:
@@ -36,6 +37,8 @@ public:
         std::string          user;
         std::string          password;
     };
+
+    using MessageCallback = std::function<void(std::string topic, std::string message)>;
 
     MqttClient(const Configuration& configuration);
     ~MqttClient();
@@ -54,6 +57,9 @@ public:
         return publish(nullptr, topic, payloadStr, qos, retain);
     }
 
+    int subscribe(const std::string& subscription_pattern, int qos, MessageCallback callback);
+    int unsubscribe(const std::string& subscription_pattern);
+
     void onConnect(int rc);
     void onDisconnect(int rc);
     void onPublish(int mid);
@@ -64,14 +70,25 @@ public:
 
 private:
     int publish(int *mid, const std::string& topic, const std::string& payload, int qos, bool retain);
+    int subscribe(int *mid, const std::string& subscription_pattern, int qos, MessageCallback callback);
+    int unsubscribe(int *mid, const std::string& subscription_pattern);
     const char* errorCodeToString(int error);
 
     struct mosquitto*    m_mosq;
 
     std::chrono::seconds m_keepalive;
     std::thread          m_thread;
-    std::timed_mutex     m_sleepMutex;
     bool                 m_running = false;
+
+    struct MessageCallbackConfiguration {
+        std::string          pattern;
+        MessageCallback      callback;
+
+        MessageCallbackConfiguration(std::string pattern, MessageCallback callback)
+            : pattern(pattern), callback(callback) {}
+    };
+
+    std::vector<MessageCallbackConfiguration> m_messageCallbacks;
 };
 
 
