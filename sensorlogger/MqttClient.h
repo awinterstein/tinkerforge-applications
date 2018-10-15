@@ -29,6 +29,28 @@
 
 class MqttClient {
 public:
+    class Message {
+    public:
+        Message(std::string topic, std::string payload)
+            : m_topic(topic), m_payload(payload) {}
+
+        const std::string& topic() const { return m_topic; }
+
+        template<typename T>
+        T payload(bool& success) const {
+            T output;
+            std::stringstream sstream(m_payload);
+            sstream >> output;
+            success = !sstream.fail();
+            return output;
+        }
+
+    private:
+        std::string m_topic;
+        std::string m_payload;
+    };
+
+
     struct Configuration {
         std::string          id;
         std::string          broker;
@@ -38,7 +60,7 @@ public:
         std::string          password;
     };
 
-    using MessageCallback = std::function<void(std::string topic, std::string message)>;
+    using MessageCallback = std::function<void(Message)>;
 
     MqttClient(const Configuration& configuration);
     ~MqttClient();
@@ -60,6 +82,8 @@ public:
     int subscribe(const std::string& subscription_pattern, int qos, MessageCallback callback);
     int unsubscribe(const std::string& subscription_pattern);
 
+private:
+    friend struct MosquittoCallbacks;
     void onConnect(int rc);
     void onDisconnect(int rc);
     void onPublish(int mid);
@@ -68,7 +92,6 @@ public:
     void onUnsubscribe(int mid);
     void onLog(int level, const char *str);
 
-private:
     int publish(int *mid, const std::string& topic, const std::string& payload, int qos, bool retain);
     int subscribe(int *mid, const std::string& subscription_pattern, int qos, MessageCallback callback);
     int unsubscribe(int *mid, const std::string& subscription_pattern);

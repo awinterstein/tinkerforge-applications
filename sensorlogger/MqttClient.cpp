@@ -22,40 +22,43 @@
 #include <mosquitto.h>
 #include <spdlog/spdlog.h>
 
-static void on_connect_wrapper(struct mosquitto* /*mosq*/, void* userdata, int rc)
-{
-    static_cast<MqttClient*>(userdata)->onConnect(rc);
-}
+struct MosquittoCallbacks {
 
-static void on_disconnect_wrapper(struct mosquitto* /*mosq*/, void* userdata, int rc)
-{
-    static_cast<MqttClient*>(userdata)->onDisconnect(rc);
-}
+    static void on_connect_wrapper(struct mosquitto*, void* userdata, int rc)
+    {
+        static_cast<MqttClient*>(userdata)->onConnect(rc);
+    }
 
-static void on_publish_wrapper(struct mosquitto* /*mosq*/, void* userdata, int mid)
-{
-    static_cast<MqttClient*>(userdata)->onPublish(mid);
-}
+    static void on_disconnect_wrapper(struct mosquitto*, void* userdata, int rc)
+    {
+        static_cast<MqttClient*>(userdata)->onDisconnect(rc);
+    }
 
-static void on_message_wrapper(struct mosquitto* /*mosq*/, void* userdata, const struct mosquitto_message* message)
-{
-    static_cast<MqttClient*>(userdata)->onMessage(message);
-}
+    static void on_publish_wrapper(struct mosquitto*, void* userdata, int mid)
+    {
+        static_cast<MqttClient*>(userdata)->onPublish(mid);
+    }
 
-static void on_subscribe_wrapper(struct mosquitto* /*mosq*/, void* userdata, int mid, int qos_count, const int* granted_qos)
-{
-    static_cast<MqttClient*>(userdata)->onSubscribe(mid, qos_count, granted_qos);
-}
+    static void on_message_wrapper(struct mosquitto*, void* userdata, const struct mosquitto_message* message)
+    {
+        static_cast<MqttClient*>(userdata)->onMessage(message);
+    }
 
-static void on_unsubscribe_wrapper(struct mosquitto* /*mosq*/, void *userdata, int mid)
-{
-    static_cast<MqttClient*>(userdata)->onUnsubscribe(mid);
-}
+    static void on_subscribe_wrapper(struct mosquitto*, void* userdata, int mid, int qos_count, const int* granted_qos)
+    {
+        static_cast<MqttClient*>(userdata)->onSubscribe(mid, qos_count, granted_qos);
+    }
 
-static void on_log_wrapper(struct mosquitto* /*mosq*/, void *userdata, int level, const char *str)
-{
-    static_cast<MqttClient*>(userdata)->onLog(level, str);
-}
+    static void on_unsubscribe_wrapper(struct mosquitto*, void *userdata, int mid)
+    {
+        static_cast<MqttClient*>(userdata)->onUnsubscribe(mid);
+    }
+
+    static void on_log_wrapper(struct mosquitto*, void *userdata, int level, const char *str)
+    {
+        static_cast<MqttClient*>(userdata)->onLog(level, str);
+    }
+};
 
 MqttClient::MqttClient(const Configuration& configuration)
     : m_keepalive(configuration.keepalive)
@@ -69,13 +72,13 @@ MqttClient::MqttClient(const Configuration& configuration)
         }
     }
 
-    mosquitto_connect_callback_set(m_mosq, on_connect_wrapper);
-    mosquitto_disconnect_callback_set(m_mosq, on_disconnect_wrapper);
-    mosquitto_publish_callback_set(m_mosq, on_publish_wrapper);
-    mosquitto_message_callback_set(m_mosq, on_message_wrapper);
-    mosquitto_subscribe_callback_set(m_mosq, on_subscribe_wrapper);
-    mosquitto_unsubscribe_callback_set(m_mosq, on_unsubscribe_wrapper);
-    mosquitto_log_callback_set(m_mosq, on_log_wrapper);
+    mosquitto_connect_callback_set(m_mosq, MosquittoCallbacks::on_connect_wrapper);
+    mosquitto_disconnect_callback_set(m_mosq, MosquittoCallbacks::on_disconnect_wrapper);
+    mosquitto_publish_callback_set(m_mosq, MosquittoCallbacks::on_publish_wrapper);
+    mosquitto_message_callback_set(m_mosq, MosquittoCallbacks::on_message_wrapper);
+    mosquitto_subscribe_callback_set(m_mosq, MosquittoCallbacks::on_subscribe_wrapper);
+    mosquitto_unsubscribe_callback_set(m_mosq, MosquittoCallbacks::on_unsubscribe_wrapper);
+    mosquitto_log_callback_set(m_mosq, MosquittoCallbacks::on_log_wrapper);
 
     // TODO: check return value
     mosquitto_lib_init();                                             // Initialize libmosquitto
@@ -163,7 +166,7 @@ void MqttClient::onMessage(const struct mosquitto_message *message)
 
     if (it != m_messageCallbacks.end())
     {
-        it->callback(std::string(message->topic), std::string(static_cast<char*>(message->payload), static_cast<size_t>(message->payloadlen)));
+        it->callback({message->topic, std::string(static_cast<char*>(message->payload), static_cast<size_t>(message->payloadlen))});
     }
 }
 
