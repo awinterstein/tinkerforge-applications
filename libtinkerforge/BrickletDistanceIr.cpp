@@ -63,8 +63,8 @@ namespace tinkerforge {
   {
     m_callback = std::move(callback);
 
-    // Activate the callback (set 10ms period as minimum)
-    distance_ir_set_distance_callback_period(&m_bricklet, 10);
+    // Activate the callback (set 1s period as minimum)
+    distance_ir_set_distance_callback_period(&m_bricklet, CALLBACK_PERIOD);
 
     // Set the callback to the "distanceCallback" member function
     distance_ir_register_callback(&m_bricklet,
@@ -74,10 +74,10 @@ namespace tinkerforge {
 
   void BrickletDistanceIr::valueUpdated(uint16_t newValue)
   {
-      // The distance bricklet might send values larger than the maximum distance
-      // defined for the sensor. This value (800) would need to be adapted for
-      // different sensors.
-      newValue = newValue > 800 ? 800 : newValue;
+      // The distance bricklet isn't working right for values larger than some
+      // value. This value would need to be adapted for different sensors.
+      newValue = newValue > MAXIMUM_VALUE ? MAXIMUM_VALUE : newValue;
+
       if (newValue == m_lastValue) { return; }
       m_lastValue = newValue;
 

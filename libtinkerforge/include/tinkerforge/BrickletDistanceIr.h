@@ -37,6 +37,9 @@ public:
     void registerCallback(ValueChangedCallback callback) override;
 
 private:
+    static constexpr auto CALLBACK_PERIOD {1000u}; // the minimal interval for value callbacks in ms
+    static constexpr auto MAXIMUM_VALUE   {650u};  // the maximum distance value for the sensor
+
     friend void distanceIrCallback(uint16_t, void*);
     void valueUpdated(uint16_t newValue);
 
